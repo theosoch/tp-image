@@ -3,6 +3,8 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
+#include <limits.h>
+#include <stdbool.h>
 #include "limace.h"
 #include "tai.h"
 
@@ -28,12 +30,12 @@
  */
 Image RGB2Gray(Image Im)
 {
-  const unsigned char** redcomp = ImGetR(Im);
-  const unsigned char** greencomp = ImGetG(Im);
-  const unsigned char** bluecomp = ImGetB(Im);
+  const unsigned char** redcomp = (const unsigned char**) ImGetR(Im);
+  const unsigned char** greencomp = (const unsigned char**) ImGetG(Im);
+  const unsigned char** bluecomp = (const unsigned char**) ImGetB(Im);
 
-  const int rowCount = ImNbRow(Im);
-  const int columnCount = ImNbCol(Im);
+  const int rowCount = (const int) ImNbRow(Im);
+  const int columnCount = (const int) ImNbCol(Im);
 
   Image result = ImAlloc(GrayLevel, rowCount, columnCount);
   unsigned char** graycomp = ImGetI(result);
@@ -60,10 +62,10 @@ Image RGB2Gray(Image Im)
  */
 Image Binarization(Image Im, unsigned char Threshold)
 {
-  const unsigned char** graycomp = ImGetI(Im);
+  const unsigned char** graycomp = (const unsigned char**) ImGetI(Im);
 
-  const int rowCount = ImNbRow(Im);
-  const int columnCount = ImNbCol(Im);
+  const int rowCount = (const int) ImNbRow(Im);
+  const int columnCount = (const int) ImNbCol(Im);
 
   Image result = ImAlloc(BitMap, rowCount, columnCount);
   unsigned char** resultGraycomp = ImGetI(result);
@@ -85,17 +87,17 @@ Image Binarization(Image Im, unsigned char Threshold)
  */
 Image Inversion(Image Im)
 {
-  const ImageType imageType = ImType(Im);
+  const ImageType imageType = (const ImageType) ImType(Im);
 
-  const int rowCount = ImNbRow(Im);
-  const int columnCount = ImNbCol(Im);
+  const int rowCount = (const int) ImNbRow(Im);
+  const int columnCount = (const int) ImNbCol(Im);
 
   Image result = ImAlloc(imageType, rowCount, columnCount);
 
   if(imageType == Color) {
-    const unsigned char** redcomp = ImGetR(Im);
-    const unsigned char** greencomp = ImGetG(Im);
-    const unsigned char** bluecomp = ImGetB(Im);
+    const unsigned char** redcomp = (const unsigned char**) ImGetR(Im);
+    const unsigned char** greencomp = (const unsigned char**) ImGetG(Im);
+    const unsigned char** bluecomp = (const unsigned char**) ImGetB(Im);
 
     unsigned char** resultRedcomp = ImGetR(result);
     unsigned char** resultGreencomp = ImGetG(result);
@@ -110,7 +112,7 @@ Image Inversion(Image Im)
     }
   }
   else {
-    const unsigned char** graycomp = ImGetI(Im);
+    const unsigned char** graycomp = (const unsigned char**) ImGetI(Im);
     unsigned char** resultGraycomp = ImGetI(result);
     
     if(imageType == GrayLevel) {
@@ -140,10 +142,10 @@ Image Inversion(Image Im)
  */
 Matrix Histogram(Image Im)
 {
-  const int rowCount = ImNbRow(Im);
-  const int columnCount = ImNbCol(Im);
+  const int rowCount = (const int) ImNbRow(Im);
+  const int columnCount = (const int) ImNbCol(Im);
 
-  const unsigned char** graycomp = ImGetI(Im);
+  const unsigned char** graycomp = (const unsigned char**) ImGetI(Im);
 
   Matrix result = MatCAlloc(Int, 1, 256);
 
@@ -191,6 +193,56 @@ Image Hist2Im(Matrix Hist, int NbLig)
 	return Res;
 }
 
+double cost(Matrix H, unsigned char i) {
+  const int** Hvalues = (const int**) MatGetInt(H);
+
+  //
+
+  double q1 = 0;
+  double q2 = 0;
+  
+  double u1 = 0;
+  double u2 = 0;
+
+  double r1 = 0;
+  double r2 = 0;
+
+  // 
+
+  for(int k = 0; k < i; ++k) {
+    const int h = Hvalues[0][k];
+    q1 += h;
+    u1 += k*h;
+  }
+  if(q1 == 0) q1 = HUGE_VAL;
+  u1 = u1 / q1;
+
+  for(int k = i; k < 255+1; ++k) {
+    const int h = Hvalues[0][k];
+    q2 += h;
+    u2 += k*h;
+  }
+  if(q2 == 0) q2 = HUGE_VAL;
+  u2 = u2 / q2;
+
+  // 
+
+  for(int k = 0; k < i; ++k) {
+    const int h = Hvalues[0][k];
+    const double kdist2u1 = k - u1;
+    r1 += h*kdist2u1*kdist2u1;
+  }
+
+  for(int k = i; k < 255+1; ++k) {
+    const int h = Hvalues[0][k];
+    const double kdist2u2 = k - u2;
+    r2 += h*kdist2u2*kdist2u2;
+  }
+
+  // 
+
+  return r1 + r2;
+}
 
 /*
  * Calcul du seuil d'Otsu
@@ -199,7 +251,19 @@ Image Hist2Im(Matrix Hist, int NbLig)
  */
 unsigned char Otsu(Matrix Hist)
 {
-  
+  unsigned char threshold = 1;
+  double min = cost(Hist,1);
+
+  for(int i = 2; i < 254+1; ++i) {
+    const double c = cost(Hist,i);
+
+    if(c < min) {
+      min = c;
+      threshold = i;
+    }
+  }
+
+  return threshold;
 }
 
 
@@ -210,7 +274,23 @@ unsigned char Otsu(Matrix Hist)
  */
 Matrix Hist2CumHist(Matrix Hist)
 {
-  AFAIRE(Hist2CumHist);
+  const int rowCount = (const int) MatNbRow(Hist);
+  const int columnCount = (const int) MatNbCol(Hist);
+
+  Matrix result = MatCAlloc(Int, rowCount, columnCount);
+
+  const int** Hvalues = (const int**) MatGetInt(Hist);
+  int ** resultValues = MatGetInt(result);
+
+  resultValues[0][0] = Hvalues[0][0];
+
+  for(int i = 0; i < rowCount; ++i) {
+    for(int j = 1; j < columnCount; ++j) {
+      resultValues[i][j] = Hvalues[i][j] + resultValues[i][j-1];
+    }
+  }
+
+  return result;
 }
 
 
@@ -222,7 +302,25 @@ Matrix Hist2CumHist(Matrix Hist)
  */
 Image AppLUT(Image Im, Matrix LUT)
 {
-  AFAIRE(AppLUT);
+  const ImageType imageType = (const ImageType) ImType(Im);
+
+  const int rowCount = (const int) ImNbRow(Im);
+  const int columnCount = (const int) ImNbCol(Im);
+
+  Image result = ImAlloc(imageType, rowCount, columnCount);
+
+  const unsigned char** originalValues = (const unsigned char**) ImGetI(Im);
+  const int** lutValues = (const int**) MatGetInt(LUT);
+
+  unsigned char** resultValues = ImGetI(result);
+
+  for(int i = 0; i < rowCount; ++i) {
+    for(int j = 0; j < columnCount; ++j) {
+      resultValues[i][j] = lutValues[0][originalValues[i][j]];
+    }
+  }
+
+  return result;
 }
 
 
@@ -236,7 +334,35 @@ Image AppLUT(Image Im, Matrix LUT)
  */
 Matrix HistSpecif(Matrix CumHist, Matrix DesCumHist)
 {
-  AFAIRE(HistSpecif);
+  const int rowCount = (const int) MatNbRow(CumHist);
+  const int columnCount = (const int) MatNbCol(CumHist);
+
+  Matrix result = MatCAlloc(Int, rowCount, columnCount);
+
+  const int** HCvalues = (const int**) MatGetInt(CumHist);
+  const int** DHCvalues = (const int**) MatGetInt(DesCumHist);
+  int** resultValues = MatGetInt(result);
+
+  for(int i = 0; i < rowCount; ++i) {
+    for(int j = 0; j < columnCount; ++j) {
+      const int c = HCvalues[i][j];
+
+      int nearestk = -1;
+      int nearestDist = INT_MAX;
+      for(int k = 0; k < columnCount; ++k) {
+        const int dist = abs(c - DHCvalues[i][k]);
+
+        if(dist < nearestDist) {
+          nearestk = k;
+          nearestDist = dist;
+        }
+      }
+
+      resultValues[i][j] = nearestk;
+    }
+  }
+
+  return result;
 }
 
 
@@ -299,6 +425,72 @@ int NotValidTernSE(Matrix StructuringElement)
   return 0;
 }
 
+// 
+
+typedef bool (*MatchingOperator)(int imgV, int seV);
+
+Image applyImageOperator(
+  Image Im,
+  Matrix StructuringElement,
+  MatchingOperator matchingOperator,
+  const int defaultOutValue
+) {
+  const ImageType imageType = (const ImageType) ImType(Im);
+
+  const int imageRowCount = (const int) ImNbRow(Im);
+  const int imageColumnCount = (const int) ImNbCol(Im);
+
+  const int seRowCount = (const int) MatNbRow(StructuringElement);
+  const int seColumnCount = (const int) MatNbCol(StructuringElement);
+
+  const int seCenterRowIndex = seRowCount / 2;
+  const int seCenterColumnIndex = seColumnCount / 2;
+
+  Image result = ImAlloc(imageType, imageRowCount, imageColumnCount);
+
+  const unsigned char** imageValues = (const unsigned char**) ImGetI(Im);
+  const int** seValues = (const int**) MatGetInt(StructuringElement);
+  unsigned char** resultValues = ImGetI(result);
+
+  for(int i = 0; i < imageRowCount; ++i) {
+    for(int j = 0; j < imageColumnCount; ++j) {
+      bool seMatch = true;
+
+      const int compStartI = i - seCenterRowIndex;
+      const int compStartJ = j - seCenterColumnIndex;
+
+      for(int sei = 0; sei < seRowCount && seMatch; ++sei) {
+        for(int sej = 0; sej < seColumnCount && seMatch; ++sej) {
+          const int compI = compStartI + sei;
+          const int compJ = compStartJ + sej;
+
+          int imgV;
+          if(
+            (0 <= compI && compI < imageRowCount)
+            && (0 <= compJ && compJ < imageColumnCount)
+          ) imgV = imageValues[compI][compJ];
+          else imgV = defaultOutValue;
+
+          const int seV = seValues[sei][sej];
+          
+          if(matchingOperator(imgV, seV)) seMatch = false;
+        }
+      }
+
+      //
+
+      resultValues[i][j] = seMatch;
+    }
+  }
+
+  return result;
+}
+
+// 
+
+bool erosionMatchingOperator(int imgV, int seV) {
+  return seV && !imgV;
+}
 
 /*
  * Érosion d'une image binaire
@@ -308,6 +500,6 @@ int NotValidTernSE(Matrix StructuringElement)
  */
 Image Erosion(Image Im, Matrix StructuringElement)
 {
-  AFAIRE(Erosion);
+  return applyImageOperator(Im, StructuringElement, erosionMatchingOperator, 0);
 }
 
